@@ -1,0 +1,28 @@
+{
+  "dependencies": {
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1"
+  },
+  "name": "si5c_kuis1_mario",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Phumax12/si5c_kuis1_Mario.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Phumax12/si5c_kuis1_Mario/issues"
+  },
+  "homepage": "https://github.com/Phumax12/si5c_kuis1_Mario#readme",
+  "devDependencies": {}
+}
