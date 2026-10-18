@@ -27,7 +27,14 @@ let businesses = [
 let nextId = 4;
 
 function getAll(kategori) {
-  if (kategori) return businesses.filter((b) => b.kategori === kategori);
+  const normalizedKategori = typeof kategori === "string" ? kategori.trim().toLowerCase() : "";
+
+  if (normalizedKategori) {
+    return businesses.filter(
+      (b) => String(b.kategori || "").trim().toLowerCase() === normalizedKategori
+    );
+  }
+
   return businesses;
 }
 

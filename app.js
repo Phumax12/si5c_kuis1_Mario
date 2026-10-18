@@ -35,7 +35,7 @@ app.use("/businesses", businessRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-if (process.env.NODE_ENV !== "production") {
+if (require.main === module && process.env.NODE_ENV !== "production") {
   app.listen(PORT, () =>
     console.log(`Server berjalan di http://localhost:${PORT}`)
   );
