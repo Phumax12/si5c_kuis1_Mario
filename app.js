@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const businessRoutes = require("./routes/businessRoutes");
+const ownerRoutes = require("./routes/ownerRoutes");
 const logger = require("./middlewares/logger");
 const { notFound, errorHandler } = require("./middlewares/errorHandler");
 
@@ -20,7 +21,11 @@ app.get("/", (req, res) => {
     endpoints: [
       "GET /businesses",
       "GET /businesses/:id",
-      "GET /businesses?kategori=kerajinan",
+      "GET /businesses?kategori=kerajinan&kota=Bandung",
+      "GET /businesses?page=1&limit=10&sortBy=namaUsaha&sortOrder=asc",
+      "GET /businesses?projection=namaUsaha,pemilik,kota",
+      "GET /owners",
+      "POST /owners (butuh x-api-key)",
       "POST /businesses (butuh x-api-key)",
       "PUT /businesses/:id (butuh x-api-key)",
       "DELETE /businesses/:id (butuh x-api-key)",
@@ -29,31 +34,26 @@ app.get("/", (req, res) => {
 });
 
 app.use("/businesses", businessRoutes);
+app.use("/owners", ownerRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-if (require.main === module && process.env.NODE_ENV !== "production") {
-  const startServer = () => {
-    app.listen(PORT, () => console.log(`Server berjalan di http://localhost:${PORT}`));
-  };
-
-  if (!process.env.DB_URI) {
-    console.warn("DB_URI belum diatur, menjalankan server tanpa koneksi MongoDB");
-    startServer();
-    return;
+async function startServer() {
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_URI;
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI belum diatur; server memerlukan koneksi MongoDB");
   }
 
-  mongoose
-    .connect(process.env.DB_URI)
-    .then(() => {
-      console.log("Terhubung ke MongoDB");
-      startServer();
-    })
-    .catch((err) => {
-      console.warn(`Gagal terhubung ke MongoDB: ${err.message}`);
-      console.warn("Menjalankan server tanpa koneksi MongoDB");
-      startServer();
-    });
+  await mongoose.connect(mongoUri);
+  console.log("Terhubung ke MongoDB");
+  app.listen(PORT, () => console.log(`Server berjalan di http://localhost:${PORT}`));
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    console.error(`Gagal menjalankan server: ${err.message}`);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = app;

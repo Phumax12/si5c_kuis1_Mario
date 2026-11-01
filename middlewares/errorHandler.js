@@ -24,6 +24,14 @@ function errorHandler(err, req, res, next) {
     });
   }
 
+  if (err.name === "ValidationError" || err.name === "CastError") {
+    return res.status(400).json({
+      status: "error",
+      message: "Data yang dikirim tidak valid",
+      data: null,
+    });
+  }
+
   const status = err.status || 500;
 
   if (status === 500) {
