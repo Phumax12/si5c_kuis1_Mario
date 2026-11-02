@@ -1,209 +1,89 @@
-const businessModel = require("../models/businessModel");
-const { errorHttp } = require("../middlewares/errorHandler");
+const Business = require('../models/businessModel');
+const Category = require('../models/categoriesModel');
+const { errorHttp } = require('../middlewares/errorHandler');
+const LIMIT_DEFAULT = 10;
+const LIMIT_MAKS = 50;
+const FIELD_SORT = ['namaUsaha', 'businessId', 'createdAt'];
+const FIELD_BOLEH_DIPILIH = ['namaUsaha', 'businessId', 'pemilik', 'categoriesId', 'createdAt'];
 
-const projectionFields = new Set([
-  "id",
-  "namaUsaha",
-  "pemilik",
-  "pemilikId",
-  "kategori",
-  "kota",
-  "noHp",
-]);
-const sortableFields = new Set([
-  "namaUsaha",
-  "kategori",
-  "kota",
-  "createdAt",
-  "updatedAt",
-]);
-
-function singleQueryValue(value, name) {
-  if (typeof value !== "string") {
-    throw errorHttp(400, `Parameter ${name} harus berupa teks`);
-  }
-  return value.trim();
+// Mengubah bilangan dari query string menjadi bilangan bulat yang aman
+function angkaAman(nilai, bawaan, min, maks) {
+  const n = parseInt(nilai, 10);
+  if (Number.isNaN(n)) return bawaan;
+  return Math.min(Math.max(n, min), maks);
 }
 
-function parsePositiveInteger(value, name, fallback, maximum) {
-  if (value === undefined) return fallback;
-  const parsed = Number(value);
-  if (
-    !Number.isSafeInteger(parsed) ||
-    parsed < 1 ||
-    (maximum && parsed > maximum)
-  ) {
-    throw errorHttp(
-      400,
-      `${name} harus berupa bilangan bulat antara 1 dan ${maximum || "maksimum"}`
-    );
+exports.create = async (req, res) => {
+  const { namaUsaha, businessId, pemilik, categoriesId } = req.body;
+  const business = await Business.create({ namaUsaha, businessId, pemilik, categoriesId });
+  res.status(201).json(business);
+};
+
+exports.getAll = async (req, res) => {
+  const filter = {};
+  if (req.query.alamat) {
+    filter['pemilik.alamat'] = String(req.query.alamat);
   }
-  return parsed;
-}
+  const kodeKategori = req.query.kategori || req.query.prodi;
+  if (kodeKategori) {
+    const category = await Category.findOne({ kodeKategori: String(kodeKategori).toUpperCase() });
+    // Kode kategori tidak dikenal -> hasil kosong ($in: [] tidak cocok dengan apa pun)
+    filter.categoriesId = category ? category._id : { $in: [] };
+  }
+  const page = angkaAman(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+  const limit = angkaAman(req.query.limit, LIMIT_DEFAULT, 1, LIMIT_MAKS);
 
-function parseProjection(value) {
-  if (value === undefined) return undefined;
-  const fields = singleQueryValue(value, "projection")
-    .split(",")
-    .map((field) => field.trim())
-    .filter(Boolean);
-
-  if (!fields.length || fields.some((field) => !projectionFields.has(field))) {
-    throw errorHttp(
-      400,
-      `projection hanya boleh berisi: ${[...projectionFields].join(", ")}`
-    );
+  // Sorting: ?sort=namaUsaha (naik) atau ?sort=-namaUsaha (turun). Bawaan: terbaru dulu
+  const sortParam = String(req.query.sort || '-createdAt');
+  const arah = sortParam.startsWith('-') ? -1 : 1;
+  const sortField = sortParam.replace(/^-/, '');
+  if (!FIELD_SORT.includes(sortField)) {
+    throw errorHttp(400, `sort hanya boleh: ${FIELD_SORT.join(', ')}`);
   }
 
-  return [...new Set(fields)];
-}
-
-function parseBusinessId(value) {
-  const mongoose = require("mongoose");
-  if (!mongoose.Types.ObjectId.isValid(value)) {
-    throw errorHttp(400, "ID usaha tidak valid");
-  }
-  return value;
-}
-
-function validateOwnerId(ownerId) {
-  if (ownerId === undefined) return;
-  const mongoose = require("mongoose");
-  if (!mongoose.Types.ObjectId.isValid(ownerId)) {
-    throw errorHttp(400, "pemilikId tidak valid");
-  }
-}
-
-async function getAllBusinesses(req, res) {
-  const { page, limit, sortBy, sortOrder, projection, kategori, kota, pemilik } =
-    req.query;
-  const parsedPage = parsePositiveInteger(page, "page", 1);
-  const parsedLimit = parsePositiveInteger(limit, "limit", 10, 100);
-  if (parsedPage > Math.floor(Number.MAX_SAFE_INTEGER / parsedLimit)) {
-    throw errorHttp(400, "Kombinasi page dan limit terlalu besar");
-  }
-  const field = sortBy === undefined ? "namaUsaha" : singleQueryValue(sortBy, "sortBy");
-  const direction =
-    sortOrder === undefined ? "asc" : singleQueryValue(sortOrder, "sortOrder");
-
-  if (!sortableFields.has(field)) {
-    throw errorHttp(400, `sortBy harus salah satu dari: ${[...sortableFields].join(", ")}`);
-  }
-  if (direction !== "asc" && direction !== "desc") {
-    throw errorHttp(400, "sortOrder harus bernilai asc atau desc");
-  }
-
-  const filters = {};
-  for (const [key, value] of Object.entries({ kategori, kota, pemilik })) {
-    if (value !== undefined) {
-      const normalized = singleQueryValue(value, key);
-      if (normalized) filters[key] = normalized;
+  // Projection: ?fields=namaUsaha,businessId
+  let select = '';
+  if (req.query.fields) {
+    const fields = String(req.query.fields).split(',').map((f) => f.trim());
+    if (!fields.every((f) => FIELD_BOLEH_DIPILIH.includes(f))) {
+      throw errorHttp(400, `fields hanya boleh: ${FIELD_BOLEH_DIPILIH.join(', ')}`);
     }
+    select = fields.join(' ');
   }
 
-  const result = await businessModel.getAll({
-    filters,
-    page: parsedPage,
-    limit: parsedLimit,
-    sortBy: field,
-    order: direction,
-    projection: parseProjection(projection),
-  });
-  res.status(200).json({ status: "success", ...result });
-}
+  const query = Business.find(filter)
+    .select(select)
+    .sort({ [sortField]: arah, _id: 1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
 
-async function getBusinessById(req, res, next) {
-  const id = parseBusinessId(req.params.id);
-  const data = await businessModel.getById(id);
-
-  if (!data) {
-    return next(errorHttp(404, `Data dengan id ${id} tidak ditemukan`));
+  if (!select || select.split(' ').includes('categoriesId')) {
+    query.populate('categoriesId', 'kodeKategori namaKategori');
   }
 
-  res.status(200).json(data);
-}
+  const [data, total] = await Promise.all([query, Business.countDocuments(filter)]);
 
-async function createBusiness(req, res, next) {
-  const { namaUsaha, pemilik, pemilikId, kategori, kota, noHp } = req.body || {};
+  res.json({ data, page, limit, total, totalPages: Math.ceil(total / limit) });
+};
+exports.getById = async (req, res) => {
+  const data = await Business.findById(req.params.id).populate('categoriesId');
+  if (!data) throw errorHttp(404, 'Data tidak ditemukan');
+  res.json(data);
+};
 
-  if (!namaUsaha || (!pemilik && !pemilikId) || !kategori || !kota) {
-    return next(
-      errorHttp(
-        400,
-        "namaUsaha, kategori, dan kota wajib diisi; sertakan pemilik atau pemilikId"
-      )
-    );
-  }
-  validateOwnerId(pemilikId);
+exports.update = async (req, res) => {
+  const { namaUsaha, businessId, pemilik, categoriesId } = req.body;
+  const data = await Business.findByIdAndUpdate(
+    req.params.id,
+    { namaUsaha, businessId, pemilik, categoriesId },
+    { returnDocument: 'after', runValidators: true }
+  );
+  if (!data) throw errorHttp(404, 'Data tidak ditemukan');
+  res.json(data);
+};
 
-  const baru = await businessModel.create({
-    namaUsaha,
-    pemilik,
-    pemilikId,
-    kategori,
-    kota,
-    noHp,
-  });
-
-  res.status(201).json({
-    status: "success",
-    message: "Data berhasil ditambahkan",
-    data: baru,
-  });
-}
-
-async function updateBusiness(req, res, next) {
-  const id = parseBusinessId(req.params.id);
-
-  const { namaUsaha, pemilik, pemilikId, kategori, kota, noHp } = req.body || {};
-
-  if (!namaUsaha || (!pemilik && !pemilikId) || !kategori || !kota) {
-    return next(
-      errorHttp(
-        400,
-        "namaUsaha, kategori, dan kota wajib diisi; sertakan pemilik atau pemilikId"
-      )
-    );
-  }
-  validateOwnerId(pemilikId);
-
-  const diubah = await businessModel.update(id, {
-    namaUsaha,
-    pemilik,
-    pemilikId,
-    kategori,
-    kota,
-    noHp,
-  });
-  if (!diubah) {
-    return next(errorHttp(404, `Data dengan id ${id} tidak ditemukan`));
-  }
-
-  res.status(200).json({
-    status: "success",
-    message: `Data usaha dengan id ${id} berhasil diubah`,
-    data: diubah,
-  });
-}
-
-async function deleteBusiness(req, res, next) {
-  const id = parseBusinessId(req.params.id);
-
-  if (!(await businessModel.remove(id))) {
-    return next(errorHttp(404, `Data dengan id ${id} tidak ditemukan`));
-  }
-
-  res.status(200).json({
-    status: "success",
-    message: `Data usaha dengan id ${id} berhasil dihapus`,
-    data: null,
-  });
-}
-
-module.exports = {
-  getAllBusinesses,
-  getBusinessById,
-  createBusiness,
-  updateBusiness,
-  deleteBusiness,
+exports.remove = async (req, res) => {
+  const data = await Business.findByIdAndDelete(req.params.id);
+  if (!data) throw errorHttp(404, 'Data tidak ditemukan');
+  res.status(204).send();
 };

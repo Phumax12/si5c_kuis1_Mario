@@ -1,53 +1,43 @@
-// helper untuk membuat error yang membawa status HTTP
 function errorHttp(status, message) {
   const err = new Error(message);
   err.status = status;
   return err;
 }
 
-// catch-all 404 (dipasang setelah semua route)
-function notFound(req, res) {
-  res.status(404).json({
-    status: "error",
-    message: "Endpoint tidak ditemukan",
-    data: null,
-  });
+function notFoundHandler(req, res, next) {
+  next(errorHttp(404, `Rute ${req.method} ${req.originalUrl} tidak ditemukan`));
 }
 
-// error handler terpusat (dipasang paling akhir)
 function errorHandler(err, req, res, next) {
-  if (err.type === "entity.parse.failed") {
-    return res.status(400).json({
-      status: "error",
-      message: "Format JSON tidak valid",
-      data: null,
-    });
+  // 1. JSON rusak dari client
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ message: 'Format JSON tidak valid' });
   }
-
-  if (err.name === "ValidationError" || err.name === "CastError") {
-    return res.status(400).json({
-      status: "error",
-      message: "Data yang dikirim tidak valid",
-      data: null,
-    });
+  // 2. ID tidak sesuai format ObjectId (mis. /mahasiswa/abc)
+  if (err.name === 'CastError') {
+    return res.status(400).json({ message: `Nilai '${err.value}' tidak valid untuk field ${err.path}` });
   }
-
-  const status = err.status || 500;
-
-  if (status === 500) {
-    console.error(err.stack);
-    return res.status(500).json({
-      status: "error",
-      message: "Terjadi kesalahan pada server",
-      data: null,
-    });
+  // 3. Pelanggaran aturan Schema (required, enum, dll.)
+  if (err.name === 'ValidationError') {
+    // Pesan CastError bawaan menyebut nama model; diganti pesan yang aman
+    const detail = Object.values(err.errors).map((e) =>
+      e.name === 'CastError' ? `Nilai untuk ${e.path} tidak valid` : e.message
+    );
+    return res.status(400).json({ message: 'Data tidak valid', detail });
   }
-
-  res.status(status).json({
-    status: "error",
-    message: err.message,
-    data: null,
-  });
+  // 4. Pelanggaran unique (kode error MongoDB 11000)
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyPattern || err.keyValue || {})[0];
+    const message = field ? `Nilai ${field} sudah dipakai` : 'Data duplikat';
+    return res.status(409).json({ message });
+  }
+  // 5. Error yang sengaja dilempar lewat errorHttp()
+  if (err.status) {
+    return res.status(err.status).json({ message: err.message });
+  }
+  // 6. Selain itu: kesalahan server. Detail hanya dicatat di log.
+  console.error(err);
+  res.status(500).json({ message: 'Terjadi kesalahan pada server' });
 }
 
-module.exports = { errorHttp, notFound, errorHandler };
+module.exports = { errorHttp, notFoundHandler, errorHandler };

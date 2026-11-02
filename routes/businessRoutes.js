@@ -1,12 +1,10 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const businessController = require("../controllers/businessController");
-const cekApiKey = require("../middlewares/cekApiKey");
+const c = require('../controllers/businessController');
+const cekApiKey = require('../middlewares/cekApiKey');
 
-router.get("/", businessController.getAllBusinesses);
-router.get("/:id", businessController.getBusinessById);
-router.post("/", cekApiKey, businessController.createBusiness);
-router.put("/:id", cekApiKey, businessController.updateBusiness);
-router.delete("/:id", cekApiKey, businessController.deleteBusiness);
+router.get('/', c.getAll);
+router.get('/:id', c.getById);
+router.post('/', cekApiKey, c.create);
 
 module.exports = router;
